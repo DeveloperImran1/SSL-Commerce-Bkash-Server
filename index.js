@@ -14,7 +14,7 @@ app.use(cors({
 app.use(express.json())
 
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const uri = "mongodb+srv://ih9066588:wyZb4giNr3n7v8hI@cluster0.mr9mnat.mongodb.net/?appName=Cluster0";
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -40,13 +40,13 @@ async function run() {
 
         // middleware
         const verifyToken = (req, res, next) => {
-            console.log("Inside verify token: --", req.headers.authorization);
+            // console.log("Inside verify token: --", req.headers.authorization);
             if (!req.headers.authorization) {
                 return res.status(401).send({ message: "unauthorizedaccess" });
             }
 
             const token = req.headers.authorization.split(" ")[1];
-            console.log("token holo", token)
+            // console.log("token holo", token)
             jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
                 if (err) {
                     return res.status(401).send({ message: "unauthorizedaccess" });
@@ -57,7 +57,7 @@ async function run() {
 
         }
 
-     
+
 
         const usersCollection = client.db("Bkash").collection("userCollection");
 
@@ -126,117 +126,207 @@ async function run() {
 
 
         // user send money korbe jekono email er acount a
-        app.post('/sendmoney', verifyToken, async(req, res)=> {
+        app.post('/sendmoney', verifyToken, async (req, res) => {
             const userData = req.body;
             console.log(userData)
-            
+
             // reciver email valid kina checking
-            const reciverIsExist = await usersCollection.findOne({phone: userData?.phone})
+            const reciverIsExist = await usersCollection.findOne({ phone: userData?.phone })
             console.log(reciverIsExist?.balance, "jake pathabo tar data")
-            if(!reciverIsExist){
-                return res.send({status: 404, data: "user not found"})
+            if (!reciverIsExist) {
+                return res.send({ status: 404, data: "user not found" })
             }
 
-              // sender er balance theke taka minus korte hobe
-              const senderData = await usersCollection.findOne({email: userData?.senderEmail })
-              console.log("sender er data update korob", senderData)
+            // sender er balance theke taka minus korte hobe
+            const senderData = await usersCollection.findOne({ email: userData?.senderEmail })
+            console.log("sender er data update korob", senderData)
 
-              const isPinMatched = await bcrypt.compare(userData.pin, senderData.pin);
-              console.log("Pin matched", isPinMatched)
+            const isPinMatched = await bcrypt.compare(userData.pin, senderData.pin);
+            console.log("Pin matched", isPinMatched)
 
-              const totalAmount =  parseInt(parseInt(userData?.balance) >= 100 ? parseInt(userData?.balance) + 5 : userData?.balance);
-              console.log("total amount", totalAmount)
-              const updatedDocSender = {
-                  $set: {
-                      balance: senderData?.balance - totalAmount,
-                      transition: [{type: "sendMoney", taka: totalAmount, reciverPhone: userData?.phone }]
-                  }
-              }  
-              const resultSender = await usersCollection.updateOne({email: userData?.senderEmail}, updatedDocSender) 
+            const totalAmount = parseInt(parseInt(userData?.balance) >= 100 ? parseInt(userData?.balance) + 5 : userData?.balance);
+            console.log("total amount", totalAmount)
+            const updatedDocSender = {
+                $set: {
+                    balance: senderData?.balance - totalAmount,
+                    transition: [{ type: "sendMoney", taka: totalAmount, reciverPhone: userData?.phone }]
+                }
+            }
+            const resultSender = await usersCollection.updateOne({ email: userData?.senderEmail }, updatedDocSender)
 
             //reciver er phone a taka send or amount plus
             const updatedDoc = {
                 $set: {
                     balance: reciverIsExist?.balance + parseInt(userData?.balance)
                 }
-            }  
-            const result = await usersCollection.updateOne({phone: userData?.phone}, updatedDoc) 
-                       
-            return res.send(result)       
+            }
+            const result = await usersCollection.updateOne({ phone: userData?.phone }, updatedDoc)
+
+            return res.send(result)
         })
 
         // user Cashout korbe jekono email er acount a
-        app.post('/cashout', verifyToken, async(req, res)=> {
+        app.post('/cashout', verifyToken, async (req, res) => {
             const userData = req.body;
             console.log(userData)
-            
+
             // agent email valid kina checking
-            const reciverIsExist = await usersCollection.findOne({phone: userData?.phone})
+            const reciverIsExist = await usersCollection.findOne({ phone: userData?.phone })
             console.log(reciverIsExist, "jake pathabo tar data")
-            if(!reciverIsExist || reciverIsExist?.role !== "agent"){
-                return res.send({status: 404, data: "Agent not found"})
+            if (!reciverIsExist || reciverIsExist?.role !== "agent") {
+                return res.send({ status: 404, data: "Agent not found" })
             }
 
-              // sender er balance theke taka minus korte hobe
-              const senderData = await usersCollection.findOne({email: userData?.senderEmail })
-              console.log("sender er data update korob", senderData)
+            // sender er balance theke taka minus korte hobe
+            const senderData = await usersCollection.findOne({ email: userData?.senderEmail })
+            console.log("sender er data update korob", senderData)
 
-              const isPinMatched = await bcrypt.compare(userData.pin, senderData.pin);
-              console.log("Pin matched", isPinMatched)
+            const isPinMatched = await bcrypt.compare(userData.pin, senderData.pin);
+            console.log("Pin matched", isPinMatched)
 
-             
+
 
             //reciver er phone a taka recive korar request korbo.
-            const updatedCashOutReq = reciverIsExist?.cashoutRequested? [...reciverIsExist?.cashoutRequested, userData] : [userData]
+            const updatedCashOutReq = reciverIsExist?.transition ? [...reciverIsExist?.transition, { type: "cashout", taka: userData?.balance, senderEmail: userData?.senderEmail, status: "pending" }] : [{ type: "cashout", taka: userData?.balance, senderEmail: userData?.senderEmail, status: "pending" }]
             const updatedDoc = {
                 $set: {
-                    cashoutRequested: updatedCashOutReq,
-                    transition: [{type: "cashout", taka: userData?.balance, senderEmail: userData?.senderEmail }]
+                    transition: updatedCashOutReq
                 }
-            }  
-            const result = await usersCollection.updateOne({phone: userData?.phone}, updatedDoc) 
-            
-          
-            
-            return res.send(result)       
+            }
+            const result = await usersCollection.updateOne({ phone: userData?.phone }, updatedDoc)
+
+
+
+            return res.send(result)
 
         })
 
         // user Cashout korbe jekono email er acount a
-        app.post('/cashin', verifyToken, async(req, res)=> {
+        app.post('/cashin', verifyToken, async (req, res) => {
             const userData = req.body;
             console.log(userData)
-            
+
             // agent email valid kina checking
-            const reciverIsExist = await usersCollection.findOne({phone: userData?.phone})
+            const reciverIsExist = await usersCollection.findOne({ phone: userData?.phone })
             console.log(reciverIsExist, "jake pathabo tar data")
-            if(!reciverIsExist || reciverIsExist?.role !== "agent"){
-                return res.send({status: 404, data: "Agent not found"})
+            if (!reciverIsExist || reciverIsExist?.role !== "agent") {
+                return res.send({ status: 404, data: "Agent not found" })
             }
 
-              // sender er data get korobo
-              const senderData = await usersCollection.findOne({email: userData?.senderEmail })
-              console.log("sender er data ", senderData)
+            // sender er data get korobo
+            const senderData = await usersCollection.findOne({ email: userData?.senderEmail })
+            console.log("sender er data ", senderData)
 
-              const isPinMatched = await bcrypt.compare(userData.pin, senderData.pin);
-              console.log("Pin matched", isPinMatched)
+            const isPinMatched = await bcrypt.compare(userData.pin, senderData.pin);
+            console.log("Pin matched", isPinMatched)
 
-             
+
 
             //reciver er phone a taka recive korar request korbo.
-            const updatedCashInReq = reciverIsExist?.cashinRequested? [...reciverIsExist?.cashinRequested, userData] : [userData]
+       
+            const updatedCashInReq = reciverIsExist?.transition ? [...reciverIsExist?.transition, { type: "cashin", taka: userData?.balance, senderEmail: userData?.senderEmail, status: "pending" }] : [{ type: "cashin", taka: userData?.balance, senderEmail: userData?.senderEmail, status: "pending" }]
             const updatedDoc = {
                 $set: {
-                    cashinRequested: updatedCashInReq
+                    transition: updatedCashInReq
                 }
-            }  
-            const result = await usersCollection.updateOne({phone: userData?.phone}, updatedDoc) 
-            
-          
-            
-            return res.send(result)       
+            }
+
+            const result = await usersCollection.updateOne({ phone: userData?.phone }, updatedDoc)
+
+
+
+            return res.send(result)
 
         })
+
+        // agent er action a status changed and taka transfer korbo
+        // app.post("/agentAction", verifyToken, async(req, res)=> {
+        //     const data = req.body;
+        //     console.log(data)
+
+        //     const myData = await usersCollection.findOne({phone: data?.myPhone})
+        //     const agentBalance = myData?.balance + parseInt(data?.transitionInfo?.taka)
+        //     const updatedDocAgent = {
+        //         $set: {
+        //             balance: agentBalance,
+        //             "transition.$[elem].status": data?.action
+        //         }
+        //     }
+        //     const result = await usersCollection.updateOne({phone: data?.myPhone}, updatedDocAgent)
+        //     res.send(result)
+        // })
+
+        app.post("/agentAction", verifyToken, async (req, res) => {
+            const data = req.body;
+            console.log(data);
+        
+            const myData = await usersCollection.findOne({ phone: data?.myPhone });
+            if (!myData) {
+                return res.status(404).send("User not found");
+            }
+        
+            const agentBalance = myData.balance + parseInt(data?.transitionInfo?.taka);
+        
+            // Update the status of the specific transaction within the transition array
+            const updatedDocAgent = {
+                $set: {
+                    balance: agentBalance,
+                    "transition.$[elem].status": data?.action
+                }
+            };
+        
+            // Array filter to match the specific transition object to update
+            const arrayFilters = [{ "elem.type": data?.transitionInfo?.type, "elem.senderEmail": data?.transitionInfo?.senderEmail }];
+        
+            const result = await usersCollection.updateOne(
+                { phone: data?.myPhone },
+                updatedDocAgent,
+                { arrayFilters }
+            );
+        
+            res.send(result);
+        });
+
+        
+
+        // With admin
+        // user k active korbo and bonus dibo
+        app.put('/active', async(req, res)=> {
+            const data = req.body;
+            console.log(data)
+
+            const user = await usersCollection.findOne({_id: new ObjectId(data?._id)})
+            console.log( "aita holo matching user" , user)
+            const updateBalance = user?.bonus ? user?.balance : user?.balance + 40;
+            const updatedDoc = {
+                $set: {
+                    status: "active",
+                    bonus: true,
+                    balance: updateBalance
+                }
+            }
+            const result = await usersCollection.updateOne({_id: new ObjectId(data?._id)}, updatedDoc)
+            res.send(result)
+        })
+
+
+        // user k disable korbo 
+        app.put('/disable', async(req, res)=> {
+            const data = req.body;
+            console.log(data)
+
+            const user = await usersCollection.findOne({_id: new ObjectId(data?._id)})
+            console.log( "aita holo matching user" , user)
+            const updatedDoc = {
+                $set: {
+                    status: "pending",
+                  
+                }
+            }
+            const result = await usersCollection.updateOne({_id: new ObjectId(data?._id)}, updatedDoc)
+            res.send(result)
+        })
+
 
 
         await client.db("admin").command({ ping: 1 });
