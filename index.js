@@ -8,7 +8,7 @@ const jwt = require('jsonwebtoken');
 
 // middleware
 app.use(cors({
-    origin: ["http://localhost:5173", "https://bkash-project-server.vercel.app"],
+    origin: ["http://localhost:5173", "https://mfs-bkash.netlify.app"],
     credentials: true
 }));
 app.use(express.json())
